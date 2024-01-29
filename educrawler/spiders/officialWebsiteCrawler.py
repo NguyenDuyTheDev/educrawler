@@ -9,8 +9,8 @@ from twisted.internet.error import DNSLookupError
 from twisted.internet.error import TimeoutError, TCPTimedOutError
 from educrawler.utils import CssSelectorGenerator, CSSAttributeType, CSSContentType
 
-class WebsiteCrawler(scrapy.Spider):
-  name = "websiteCrawler"
+class OfficialWebsiteCrawler(scrapy.Spider):
+  name = "officialWebsiteCrawler"
   allowed_domains = []
   start_urls = []
   visited = []
@@ -21,6 +21,10 @@ class WebsiteCrawler(scrapy.Spider):
     "mid","mid","wma","aac","wav","mp3", # audio
     "pdf","epub","doc","docx","svg" # document
   ]
+
+  supported_file_format = ["mpg","mpeg","avi","wmv","mov","rm","ram","swf","flv","ogg","webm","mp4","mid","mid","wma","aac","wav","mp3","pdf","epub","doc","docx","png","jpg","jpeg","gif","tiff","tif"]
+  allowed_file_format = []
+  allowed_keyword = []
 
   academic_keyword = [
     "giáo dục",
@@ -92,7 +96,14 @@ class WebsiteCrawler(scrapy.Spider):
   )
   
   def __init__(self, user_settings, custom_crawl_rules = [], name: str | None = None, **kwargs: Any):
-    super(WebsiteCrawler, self).__init__(name, **kwargs)
+    super(OfficialWebsiteCrawler, self).__init__(name, **kwargs)
+
+    if len(user_settings["ALLOWED_FILE_FORMAT"]) == 0:
+      self.allowed_file_format = self.supported_file_format
+    else:
+      self.allowed_file_format = user_settings["ALLOWED_FILE_FORMAT"]
+    self.allowed_keyword = user_settings["ALLOWED_KEYWORD"]
+    self.allowed_keyword = self.academic_keyword
 
     for link in user_settings["LINKS"]:
       self.start_urls.append(link)
@@ -118,30 +129,27 @@ class WebsiteCrawler(scrapy.Spider):
       )
       
   def parse(self, response):
-    if response.url in self.upcomming:
-      self.upcomming.remove(response.url)
-    self.visited.append(response.url)
-    
     converted_headers = self.convert(response.headers)
     
     if ("text/html" in converted_headers["Content-Type"]):
       academic_keywords = 0
     
       # Crawl Basic Data
-      title1 = response.css('h1::text').get()
-      title2 = response.css('h2::text').get()
-      title3 = response.css('h3::text').get()
-      title4 = response.css('h4::text').get()
-      title5 = response.css('h5::text').get()
-      title6 = response.css('h6::text').get()
-      websiteTitle = response.css('title::text').get()
     
+      '''
+      websiteTitle = response.css('title::text').get()
       content   = response.css('p').getall()
       rawHrefs  = response.css('a::attr(href)').getall()
       images    = response.css('img::attr(src)').getall()            
       rawFiles  = response.css('video::attr(src)').getall()
       rawFiles.append(response.css('source::attr(src)').getall())
       rawFiles.append(response.css('audio::attr(src)').getall())
+      '''
+      websiteTitle = ""
+      content = []
+      rawHrefs = []
+      images    = []        
+      rawFiles = []
     
       # Custom Content
       for customRule in self.custom_crawl_rules:
@@ -153,19 +161,22 @@ class WebsiteCrawler(scrapy.Spider):
         contentAttr = CSSAttributeType(customRule)
         contentType = CSSContentType(customRule)        
                       
-        if contentType == "a" and contentAttr == "href":
+        if contentType == "a":
           rawHrefs += rawContent
+   
+        elif contentType == "img":
+          images += rawContent
                 
-        if contentType == "video" and contentAttr == "src":
+        elif contentType == "video":
           rawFiles += rawContent
               
-        if contentType == "source" and contentAttr == "src":
+        elif contentType == "source":
           rawFiles += rawContent
 
-        if contentType == "audio" and contentAttr == "src":
+        elif contentType == "audio":
           rawFiles += rawContent
               
-        if contentAttr == "none" or contentAttr == "text": 
+        else:
           content += rawContent
     
       # Cleaning Href 
@@ -251,7 +262,7 @@ class WebsiteCrawler(scrapy.Spider):
         # Check if same domain 
         if not bool(parsedSrc.netloc):
           recentSrc = urljoin(response.url, recentSrc)
-        for fileFormat in self.multimedia_format:
+        for fileFormat in self.allowed_file_format:
           if fileFormat.lower() in recentSrc.lower():
             realFiles.append(recentSrc)
             break
@@ -259,7 +270,7 @@ class WebsiteCrawler(scrapy.Spider):
     
       # Extract absolute img url from a tag
       for href in realHrefs:
-        for fileFormat in self.image_formats:
+        for fileFormat in self.allowed_file_format:
           dotFileFormat = ".".join(fileFormat)
           if dotFileFormat in href.lower():
             clean_images.append(href)
@@ -267,55 +278,101 @@ class WebsiteCrawler(scrapy.Spider):
             
       # Extract absolute files url from a tag
       for href in realHrefs:
-        for fileFormat in self.multimedia_format:
+        for fileFormat in self.allowed_file_format:
           dotFileFormat = ".".join(fileFormat)
           if dotFileFormat in href.lower():
             realFiles.append(href)
             break
             
-      realFiles.append(response.url)
+      # realFiles.append(response.url)
             
-      # Check if academic content
-      for keyword in self.academic_keyword:
+      # Check if academic content      
+      for keyword in self.allowed_keyword:
         if keyword in websiteTitle:
           academic_keywords += 1
         for content_row in content:
           if keyword in content_row:
             academic_keywords += 1
     
-      items = {
-        "item_type": "HTML",
-        "url": response.url,
-        "academic_keyword": academic_keywords,
-        "h1": title1,
-        "h2": title2,
-        "h3": title3,
-        "h4": title4,
-        "h5": title5,
-        "h6": title6,
-        "title": websiteTitle,
-        "content" : content,
-        "link": realHrefs,
-        "image_urls": clean_images,
-        "file_urls": realFiles
-      }
-      if academic_keywords > 10:
+      if len(self.allowed_keyword) == 0 or (len(self.allowed_keyword) > 0 and academic_keywords > 1):
+        items = {
+          "phase": "webpage",
+          "item_type": "HTML",
+          "domain": self.allowed_domains[0],
+          "url": response.url,
+          "academic_keyword": academic_keywords,
+          "h1": "",
+          "h2": "",
+          "h3": "",
+          "h4": "",
+          "h5": "",
+          "h6": "",
+          "title": websiteTitle,
+          "content" : content,
+          "link": realHrefs,
+          "image_urls": clean_images,
+          "file_urls": realFiles
+        }
         yield items
     
     # Find next link 
     if ("text/html" in converted_headers["Content-Type"]):
+      rawHrefs  = response.css('a::attr(href)').getall()
+      realHrefs = []
+      for href in rawHrefs:
+        # Remove empty href
+        if len(href) == 0:
+          continue  
+        if href == "#":
+          continue
+        if href == "/":
+          continue
+              
+        # is real href
+        isLink = True
+        for tag in self.uncrawlable_link:
+          if tag in href:
+            isLink = False
+            break
+          if isLink == False:
+            continue
+              
+        # Reformat link
+        parsedHref = urlparse(href)
+        recentHref = href
+        if recentHref[0] == "/":
+          recentHref = urljoin(response.url, href)
+          parsedHref = urlparse(recentHref)
+                
+        # Check after append
+        if not parsedHref.scheme:
+          continue
+        if "http" not in parsedHref.scheme:
+          continue
+              
+        # Check if same domain 
+        if not bool(parsedHref.netloc):
+          recentHref = urljoin(response.url, recentHref)
+        realHrefs.append(recentHref)
+        
+      # Send to scheduler
+      for link in realHrefs:          
+        if link not in self.visited and link not in self.upcomming:
+          self.upcomming.append(link)
+          yield scrapy.Request(link, callback=self.parse) 
+      
       return
     else:
       isSuitableFile = False
       # Extract absolute img url from a tag
-      for fileFormat in self.image_formats:
+      for fileFormat in self.allowed_file_format:
         dotFileFormat = ".".join(fileFormat)
         if dotFileFormat in response.url.lower():
           isSuitableFile = True  
           break
             
       # Extract absolute files url from a tag
-      for fileFormat in self.multimedia_format:
+      for fileFormat in self.allowed_file_format:
         dotFileFormat = ".".join(fileFormat)
         if dotFileFormat in response.url.lower():
           isSuitableFile = True  
@@ -323,6 +380,7 @@ class WebsiteCrawler(scrapy.Spider):
           
       if isSuitableFile:
         yield {
+          "phase": "file",
           "item_type": "File",
           "domain": "",
           "url": response.url,

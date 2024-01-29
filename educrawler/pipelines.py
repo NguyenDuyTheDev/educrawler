@@ -8,6 +8,7 @@
 from itemadapter import ItemAdapter
 from scrapy.pipelines.images import ImagesPipeline
 from scrapy.pipelines.files import FilesPipeline
+from educrawler.utils import removeHTMLTag, removeEmptyLine
 
 import psycopg2
 from datetime import datetime
@@ -225,6 +226,169 @@ class PostgresPipeline:
       self.cur.close()
       self.connection.close()
       self.__init__() 
+              
+    return item
+  
+  
+class WebpagePipeLine:
+  academic_keyword = [
+    "giáo dục",
+    "đại học",
+    "trường",
+    "học",
+    "dạy",
+    "phổ thông",
+    "tiểu học",
+    "mầm non",
+    "giáo viên",
+    "đào tạo",
+    "nghề",
+    "sinh viên",
+    "học sinh",
+    "ngành",
+    "khoa",
+    "trung học",
+    "môn",
+    "ngữ văn",
+    "bài tập",
+    "chuyên",
+    "học đường",
+    "trải nghiệm",
+    "vận động",
+    "kĩ năng",
+    "kiến trúc",
+    "học tập",
+    "kĩ năng mềm",
+    "rèn luyện",
+    "giảng viên",
+    "sư phạm",
+    "tư duy",
+    "phân tích",
+    "thực nghiệm",
+    "giải quyết vấn đề",
+    "toán",
+    "tự học",
+    "hướng dẫn",
+    "đánh giá",
+    "kết quả",
+  ]
+  
+  def __init__(self):
+  ## Connection Details
+    hostname = 'localhost'
+    username = 'postgres'
+    password = 'k0K0R0som@lI' # your password
+    database = 'FinalProject'
+
+    ## Create/Connect to database
+    self.connection = psycopg2.connect(host=hostname, user=username, password=password, dbname=database)
+        
+    ## Create cursor, used to execute commands
+    self.cur = self.connection.cursor()
+    
+    print('initial spider')
+      
+  def open_spider(self, spider):
+    print('open spider')
+          
+  def close_spider(self, spider):
+    ## Close cursor & connection to database 
+    self.cur.close()
+    self.connection.close()
+    
+    print('close spider')
+      
+  def process_item(self, item, spider):
+    if item["phase"] != "webpage":
+      return item
+    
+    sql_check_command = '''
+    select * from "FinalProject"."Article" where "Url" = '%s'
+    ''' % (item["url"])
+    self.cur.execute(sql_check_command)
+    result = self.cur.fetchone()
+    
+    # Process Data
+    title = ""
+          
+    if item["title"] is not None: 
+      title = item["title"].replace("'", "").replace('"', '')
+    
+    reformated_content = []
+    for raw_content in item["content"]:    
+      reformated_content_unit = removeHTMLTag(raw_content)
+      
+      if len(reformated_content_unit) > 0:
+        reformated_content.append(reformated_content_unit)
+          
+    reformated_files_name = []
+    for raw_file_name in item["image_urls"]:    
+      reformated_files_name.append(raw_file_name.split('/')[-1])
+
+    reformated_content_as_string = "\n".join(reformated_content)
+    reformated_content_as_string = removeEmptyLine(reformated_content_as_string)
+    
+    imgs_as_tring = ",".join(reformated_files_name)
+    files_as_tring = ",".join(item["file_urls"])
+    crawl_status = "Good"
+    note = ""
+    
+    # Check
+    tokens = reformated_content_as_string.split(" ") 
+    total_all_word = 0
+    for keyword in self.academic_keyword:
+      total_keyword = 0
+      
+      for token in tokens:
+        if keyword in token:
+          total_keyword += 1
+        
+      if total_keyword > int(len(tokens) / 200):
+        total_all_word += 1
+    
+    if result and total_all_word >= 0:          
+      sql_delete_command = '''
+      DELETE FROM "FinalProject"."Article" 
+      WHERE "Url" = '%s';
+      ''' % item["url"]
+    
+      try:
+        self.cur.execute(sql_delete_command)
+        self.connection.commit()
+      except Exception as error:
+        spider.logger.warn("Oops! An exception has occured:", error)
+        spider.logger.warn("Exception TYPE:", type(error))
+        spider.logger.warn("Error in sql delete: " + sql_delete_command)
+        self.cur.close()
+        self.connection.close()
+        self.__init__()     
+        
+    if total_all_word > 0:
+      sql_command = '''
+      insert into "FinalProject"."Article" 
+      ("Domain", "Url", "FileName", "Content", "Images", "Files", "CrawlStatus", "Note") 
+      values (
+        '%s',
+        '%s',
+        '%s',
+        '%s',
+        '%s',
+        '%s',
+        '%s',
+        '%s'
+      )
+      ''' % (item["domain"], item["url"], item["url"], reformated_content_as_string, imgs_as_tring, files_as_tring, crawl_status, note)
+          
+      try:
+        self.cur.execute(sql_command)
+        self.connection.commit()
+      except Exception as error:
+        spider.logger.warn("Oops! An exception has occured:", error)
+        spider.logger.warn("Exception TYPE:", type(error))
+        spider.logger.warn("Error in sql insert: " + sql_command)
+        self.cur.close()
+        self.connection.close()
+        self.__init__() 
               
     return item
   

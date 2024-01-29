@@ -67,7 +67,8 @@ SPIDER_MIDDLEWARES = {
 ITEM_PIPELINES = {
   "educrawler.pipelines.CustomImagesPipeline": 1,
   "educrawler.pipelines.CustomFilesPipeline": 1,
-  "educrawler.pipelines.PostgresPipeline": 1,
+  #"educrawler.pipelines.PostgresPipeline": 1,
+  "educrawler.pipelines.WebpagePipeLine": 1,
   "scrapy.pipelines.images.ImagesPipeline": 1,
   "scrapy.pipelines.files.FilesPipeline": 1
 }

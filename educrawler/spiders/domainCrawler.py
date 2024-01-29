@@ -315,7 +315,7 @@ class DomainCrawler(scrapy.Spider):
             realFiles.append(href)
             break
           
-      realFiles.append(response.url)
+      #realFiles.append(response.url)
             
       # Check if academic content
       for keyword in self.academic_keyword:

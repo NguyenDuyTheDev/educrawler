@@ -25,16 +25,16 @@ class EducrawlerSpiderMiddleware:
         # Called for each response that goes through the spider
         # middleware and into the spider.
         if 200 <= response.status < 300:  # common case
-          print('Status Code: 200')
+          print('Status Code: 200. Url: ' + response.url)
           return
         if 300 <= response.status < 400:  # common case
-          print('Status Code: 300')
+          print('Status Code: 300. Url: ' + response.url)
           return
         if 400 <= response.status < 500:  # common case
-          print('Status Code: 400')
+          print('Status Code: 400. Url: ' + response.url)
           return
         if 500 <= response.status < 600:  # common case
-          print('Status Code: 500')
+          print('Status Code: 500. Url: ' + response.url)
           return
         # Should return None or raise an exception.
         return None
